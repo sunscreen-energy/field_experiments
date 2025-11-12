@@ -1,0 +1,10 @@
+[project]
+name = "field-experiments"
+version = "0.1.0"
+description = "Exploration utilities and reporting for Sunscreen field experiment datasets"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.8",
+    "rasterio>=1.4.3",
+]
