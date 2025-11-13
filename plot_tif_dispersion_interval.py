@@ -1,99 +1,18 @@
 import rasterio
 from rasterio.warp import transform
 import matplotlib.pyplot as plt
-import pandas as pd
-from collections import defaultdict
-import json
 from pathlib import Path
 import numpy as np
-from datetime import datetime, timezone, timedelta
+from utils import (
+    load_sensor_data,
+    group_sensors_by_location,
+    parse_tif_timestamp,
+    DISPERSION_START_EPOCH,
+    DISPERSION_END_EPOCH
+)
 
 # Configuration flag
 USE_OUTSIDE_BASELINE = False  # If False, use only BEFORE; if True, use BEFORE + AFTER
-
-# Dispersion window (UTC epochs from documentation)
-DISPERSION_START_EPOCH = 1762544520  # 2025-11-07 11:42:00 PST
-DISPERSION_END_EPOCH = 1762548780    # 2025-11-07 12:50:00 PST
-
-
-def load_sensor_data():
-    """Load sensor coordinates and pyranometer data."""
-    with open('sensor_coordinates/sensor_coordinates.json', 'r') as f:
-        sensor_coords = json.load(f)
-
-    pyranometer_df = pd.read_csv('data/2025-11-07/pyranometers/pyranometer_sensors.csv',
-                                  low_memory=False)
-
-    return sensor_coords, pyranometer_df
-
-
-def group_sensors_by_location(sensor_coords, precision_decimals=7):
-    """
-    Groups sensors by exact (or near-exact) location.
-
-    This method assumes sensors at the same location have coordinates
-    that are identical within a very small floating-point tolerance.
-    It works by rounding coordinates to a specified number of
-    decimal places and grouping all sensors that map to the
-    same rounded coordinate.
-
-    This replaces the need for spatial clustering algorithms like DBSCAN.
-
-    Args:
-        sensor_coords (dict):
-            Maps unit_name (str) to (lat, lon) tuple.
-        precision_decimals (int):
-            The number of decimal places to round to for grouping.
-            The default of 7 corresponds to your specified tolerance
-            of ~1e-7 degrees (approx 1.11 cm).
-
-    Returns:
-        dict: Maps a unique, 0-indexed location_id (int) to a
-              list of unit names (str) at that location.
-    """
-
-    location_map = defaultdict(list)
-
-    for unit, (lat, lon) in sensor_coords.items():
-        rounded_key = (round(lat, precision_decimals),
-                       round(lon, precision_decimals))
-        
-        location_map[rounded_key].append(unit)
-
-    
-    final_groups = {}
-    for i, units_list in enumerate(location_map.values()):
-        # location_id 'i' maps to the list of unit names at that location
-        final_groups[i] = units_list
-
-    return final_groups
-
-
-def parse_tif_timestamp(tif_path):
-    """
-    Parse timestamp from TIF filename.
-
-    Format: 2025-11-07T1101PST_ORTHO_TIR_Celsius.tif
-
-    Returns:
-        epoch timestamp (int) and datetime object in PST
-    """
-    filename = Path(tif_path).stem
-    # Extract date and time parts
-    parts = filename.split('T')
-    date_str = parts[0]  # 2025-11-07
-    time_str = parts[1].split('PST')[0]  # 1101
-
-    year, month, day = date_str.split('-')
-    hour = int(time_str[:2])
-    minute = int(time_str[2:4])
-
-    # Create datetime in PST (UTC-8)
-    pst = timezone(timedelta(hours=-8))
-    dt = datetime(int(year), int(month), int(day), hour, minute, tzinfo=pst)
-    epoch = int(dt.timestamp())
-
-    return epoch, dt
 
 
 def classify_tif_files(tif_files):
@@ -106,7 +25,7 @@ def classify_tif_files(tif_files):
     classification = {'before': [], 'during': [], 'after': []}
 
     for tif_file in tif_files:
-        epoch, dt = parse_tif_timestamp(tif_file)
+        epoch, _ = parse_tif_timestamp(tif_file)
 
         if epoch < DISPERSION_START_EPOCH:
             classification['before'].append(tif_file)

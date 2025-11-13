@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 
 
 DROP_CLOUD = True
+MEAN_BASED_ON_AFTER = False
 KEEP_ONLY_MIDDLE_BAND = False
 
 # Time Range Constants
@@ -163,8 +164,22 @@ def plot_temporal_analysis(control_df, experimental_df, pixel_cols, plots_dir):
     print(f"  End:   {DISPERSION_END_DT} -> Epoch: {DISPERSION_END_EPOCH}")
 
     # Calculate pixel-wise temporal means, before spraying
-    control_pixel_means = control_df[control_df['epoch_utc'] < DISPERSION_START_EPOCH][pixel_cols].mean(axis=0)
-    experimental_pixel_means = experimental_df[experimental_df['epoch_utc'] < DISPERSION_START_EPOCH][pixel_cols].mean(axis=0)
+    if MEAN_BASED_ON_AFTER:
+        control_pixel_means = control_df[
+            (control_df['epoch_utc'] > DISPERSION_END_EPOCH) | 
+            (control_df['epoch_utc'] < DISPERSION_START_EPOCH)
+        ][pixel_cols].mean(axis=0)
+        experimental_pixel_means = experimental_df[
+            (experimental_df['epoch_utc'] > DISPERSION_END_EPOCH) |
+            (experimental_df['epoch_utc'] < DISPERSION_START_EPOCH)
+        ][pixel_cols].mean(axis=0)
+    else:
+        control_pixel_means = control_df[
+            control_df['epoch_utc'] < DISPERSION_START_EPOCH
+        ][pixel_cols].mean(axis=0)
+        experimental_pixel_means = experimental_df[
+            experimental_df['epoch_utc'] < DISPERSION_START_EPOCH
+        ][pixel_cols].mean(axis=0)
 
     # Calculate temperature anomalies (difference from pixel mean)
     control_anomalies = control_df[pixel_cols].sub(control_pixel_means, axis=1)
