@@ -38,6 +38,7 @@ Shared utility functions including sensor data loading, coordinate transformatio
 
 Run the main analysis:
 ```bash
+uv sync
 uv run python drone_footage.py
 uv run python plot_tif_dispersion_interval.py
 uv run python explore_thermal_cameras.py
