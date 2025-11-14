@@ -17,9 +17,9 @@ sensor_locations_normalized = [
     ((22 + 90)/227, 382/526),   # Top-middle-ish
     ((227 - 22)/227, 30/526),   # Bottom-right-ish
     ((227 - 22)/227, 163/526),
-    ((227 - 22)/227, 312/526)    # Top-right-ish
+    ((227 - 22)/227, 312/526),    # Top-right-ish
     (-3/4, 1),   # Control 1 (NW)
-    (1, 1),   # Control 2 (NE)
+    (1.15, 0.85),   # Control 2 (NE)
 ]
 
 sensor_ids_in_location = [
