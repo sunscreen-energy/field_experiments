@@ -3,6 +3,8 @@
 
 The primary analysis method involved constructing regions based on their likely influence from the aerosol dispersion event. Weather sensors indicated primarily **northwesterly winds** blowing across the field during the dispersion. Based on this wind data, we constructed six regions: **Experimental 1**, **Mixed 1-4** and **Control 1**, ranked by their potential exposure to the dispersion plume.
 
+This analysis also takes into account that the drone flight path took time which may cause a spatial correlation with temperature.
+
 ---
 ## Temperature Gains During Experiment:
 <img src="plots/drone_footage_analysis/during.png" alt="Temperature gains during experiment" width="570">
