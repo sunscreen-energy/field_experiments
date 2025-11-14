@@ -10,6 +10,7 @@ from utils import (
     DISPERSION_START_EPOCH,
     DISPERSION_END_EPOCH
 )
+from drone_footage import EMISSION_SITE_X, EMISSION_SITE_Y
 
 # Configuration flag
 USE_OUTSIDE_BASELINE = False  # If False, use only BEFORE; if True, use BEFORE + AFTER
@@ -207,6 +208,12 @@ def plot_dispersion_effect(temporal_difference, bounds, crs, sensor_coords,
                        color='white', weight='bold',
                        bbox=dict(boxstyle='round,pad=0.3',
                                 facecolor='black', alpha=0.6))
+
+    # Plot emission site
+    ax_map.scatter(EMISSION_SITE_X, EMISSION_SITE_Y, c='red', s=150, marker='*',
+                  edgecolors='white', linewidths=2, alpha=1.0, zorder=10,
+                  label='Emission Site')
+    ax_map.legend(loc='upper right', fontsize=8)
 
     plt.colorbar(im, ax=ax_map, label='Normalized Temperature Difference (C)')
     ax_map.set_xlabel('Easting (m)')

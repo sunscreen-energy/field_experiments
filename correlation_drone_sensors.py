@@ -1,62 +1,97 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from pathlib import Path
-from scipy.stats import linregress
 from utils import (
     load_sensor_data,
+    group_sensors_by_location,
     parse_tif_timestamp,
-    extract_temps_near_sensor,
     get_pyranometer_data_at_time,
-    mean_center
+    mean_center,
+    compute_correlations,
+    plot_correlation,
+    DISPERSION_START_EPOCH,
+    DISPERSION_END_EPOCH
 )
+from drone_footage import DroneFootageAnalysis, CORNERS, BUFFER_METERS
 
 
-def collect_drone_pyranometer_pairs(tif_files, sensor_coords, pyranometer_df, radius_m=10, time_window_s=60):
+def collect_drone_pyranometer_pairs(tif_files, sensor_coords, pyranometer_df, drone_analysis, radius_m=2, time_window_s=30, verbose=False):
     """
     Collect paired measurements of drone temperatures and pyranometer variables.
 
     For each drone pass:
-      - Extract drone temps within radius_m of each sensor
-      - Get pyranometer measurements at +/- time_window_s around drone pass time
+      - Group sensors by location
+      - For each location, check if there's drone coverage (temps within radius_m)
+      - If no drone coverage at a location, skip all sensors at that location
+      - If there is coverage, get pyranometer measurements for all sensors at that location
       - Compute means and pair them
+
+    Args:
+        tif_files: List of TIF file paths
+        sensor_coords: Dict mapping sensor IDs to (lat, lon) tuples
+        pyranometer_df: DataFrame with pyranometer data
+        drone_analysis: DroneFootageAnalysis instance (with decorrelation already computed)
+        radius_m: Half-width of square in meters (default: 2)
+        time_window_s: Time window in seconds for matching pyranometer data (default: 30)
+        verbose: Print detailed debugging info (default: False)
 
     Returns:
         DataFrame with columns: drone_temp, and pyranometer variable columns
     """
     all_pairs = []
+    location_groups = group_sensors_by_location(sensor_coords)
 
-    print(f"\nProcessing {len(tif_files)} drone passes...")
+    print(f"\nProcessing {len(tif_files)} drone passes for {len(location_groups)} sensor locations...")
+
+    if verbose and hasattr(drone_analysis, 'decorrelation_params'):
+        print("\nDecorelation parameters:")
+        for direction in ['latitude', 'longitude']:
+            if drone_analysis.decorrelation_params[direction] is not None:
+                params = drone_analysis.decorrelation_params[direction]
+                print(f"  {direction}: slope={params['slope']:.6f}, R²={params['r_squared']:.6f}")
 
     for tif_file in tif_files:
         epoch, dt = parse_tif_timestamp(tif_file)
         print(f"  {Path(tif_file).name} (epoch: {epoch}, time: {dt})")
 
-        for unit, (lat, lon) in sensor_coords.items():
-            drone_temps = extract_temps_near_sensor(tif_file, lat, lon, radius_m)
+        for units in location_groups.values():
+            lat, lon = sensor_coords[units[0]]
 
-            if len(drone_temps) == 0:
+            drone_temps_decorr = drone_analysis.extract_temps_near_sensor(
+                tif_file, lat, lon, radius_m, apply_decorrelation=True
+            )
+
+            if verbose and len(drone_temps_decorr) > 0:
+                drone_temps_raw = drone_analysis.extract_temps_near_sensor(
+                    tif_file, lat, lon, radius_m, apply_decorrelation=False
+                )
+                print(f"    Sensor ({lat:.6f}, {lon:.6f}): "
+                      f"raw={np.mean(drone_temps_raw):.3f}C, "
+                      f"decorr={np.mean(drone_temps_decorr):.3f}C, "
+                      f"diff={np.mean(drone_temps_raw) - np.mean(drone_temps_decorr):.3f}C")
+
+            if len(drone_temps_decorr) == 0:
                 continue
 
-            mean_drone_temp = np.mean(drone_temps)
+            mean_drone_temp = np.mean(drone_temps_decorr)
 
             pyran_data = get_pyranometer_data_at_time(pyranometer_df, epoch, time_window_s)
 
-            unit_data = pyran_data[pyran_data['Device_ID'] == unit]
+            location_data = pyran_data[pyran_data['Device_ID'].isin(units)]
 
-            if len(unit_data) == 0:
+            if len(location_data) == 0:
                 continue
 
             pair = {'drone_temp': mean_drone_temp}
 
-            for col in unit_data.columns:
+            for col in location_data.columns:
                 if col in ['Device_ID', 'epoch_utc', 'local_iso8601', 't_plus_s', 'source_file', 'wind_dir_cardinal']:
                     continue
 
-                if unit_data[col].dtype == 'object':
+                if location_data[col].dtype == 'object':
                     continue
 
-                values = unit_data[col].dropna()
+                values = location_data[col].dropna()
                 if len(values) > 0:
                     pair[col] = values.mean()
 
@@ -77,7 +112,7 @@ def compute_correlations_with_drone_temp(pairs_df):
     Compute correlations between pyranometer variables and drone temperatures.
 
     Returns:
-        dict mapping variable names to (x_values, y_values, r_squared, n_points) tuples
+        dict mapping variable names to (x_values, y_values, r_squared, n_points, slope, intercept) tuples
     """
     if 'drone_temp' not in pairs_df.columns or len(pairs_df) < 10:
         print("Insufficient paired data for correlation analysis")
@@ -95,59 +130,7 @@ def compute_correlations_with_drone_temp(pairs_df):
         'sps_typ_particle_um', 'wind_dir_deg', 'wind_speed_kph'
     ]
 
-    correlations = {}
-
-    for var in variables:
-        if var not in pairs_df.columns:
-            continue
-
-        valid_mask = pairs_df[var].notna() & pairs_df['mean_centered_drone_temp'].notna()
-        valid_data = pairs_df[valid_mask]
-
-        if len(valid_data) < 10:
-            print(f"  {var}: Insufficient data (n={len(valid_data)})")
-            continue
-
-        x = valid_data['mean_centered_drone_temp'].values
-        y = valid_data[var].values
-
-        if np.std(y) < 1e-10:
-            print(f"  {var}: No variance in data")
-            continue
-
-        slope, intercept, r_value, p_value, std_err = linregress(x, y)
-        r_squared = r_value ** 2
-
-        correlations[var] = (x, y, r_squared, len(valid_data), slope, intercept)
-
-        print(f"  {var}: R² = {r_squared:.4f}, n = {len(valid_data)}, p = {p_value:.2e}")
-
-    return correlations
-
-
-def plot_correlation(var_name, x, y, r_squared, n_points, slope, intercept, output_dir):
-    """
-    Create a scatterplot showing correlation between a variable and mean-centered drone temperature.
-    """
-    fig, ax = plt.subplots(figsize=(10, 8))
-
-    ax.scatter(x, y, alpha=0.3, s=10, edgecolors='none')
-
-    x_line = np.array([x.min(), x.max()])
-    y_line = slope * x_line + intercept
-    ax.plot(x_line, y_line, 'r-', linewidth=2, label=f'y = {slope:.3f}x + {intercept:.3f}')
-
-    ax.set_xlabel('Mean-Centered Drone Temperature (C)', fontsize=12)
-    ax.set_ylabel(var_name, fontsize=12)
-    ax.set_title(f'Correlation: {var_name} vs Drone Temperature\nR² = {r_squared:.4f}, n = {n_points}', fontsize=14)
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3)
-
-    output_path = output_dir / f'{var_name}_r_squared_{r_squared:.4f}.png'
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
-    print(f"  Saved plot to {output_path}")
+    return compute_correlations(pairs_df, 'mean_centered_drone_temp', variables)
 
 
 def main():
@@ -165,8 +148,21 @@ def main():
 
     print(f"\nFound {len(tif_files)} drone TIF files")
 
-    print("\nCollecting drone-pyranometer paired measurements...")
-    pairs_df = collect_drone_pyranometer_pairs(tif_files, sensor_coords, pyranometer_df)
+    print("\nInitializing drone footage analysis for spatial decorrelation...")
+    drone_analysis = DroneFootageAnalysis(
+        corners=CORNERS,
+        buffer_m=BUFFER_METERS,
+        tif_pattern='data/2025-11-07/drone_imaging/*.tif',
+        dispersion_start_epoch=DISPERSION_START_EPOCH,
+        dispersion_end_epoch=DISPERSION_END_EPOCH
+    )
+
+    print("\nComputing spatial decorrelation parameters...")
+    drone_analysis.decorrelate_spatial(timeframes=['before'], direction='latitude')
+    drone_analysis.decorrelate_spatial(timeframes=['before'], direction='longitude')
+
+    print("\nCollecting drone-pyranometer paired measurements (with spatial decorrelation)...")
+    pairs_df = collect_drone_pyranometer_pairs(tif_files, sensor_coords, pyranometer_df, drone_analysis, verbose=False)
 
     if len(pairs_df) == 0:
         print("No paired data collected. Exiting.")
@@ -185,7 +181,7 @@ def main():
     print(f"\nCreating plots...")
     for var_name, (x, y, r_squared, n_points, slope, intercept) in correlations.items():
         print(f"  Plotting {var_name}...")
-        plot_correlation(var_name, x, y, r_squared, n_points, slope, intercept, output_dir)
+        plot_correlation(var_name, x, y, r_squared, n_points, slope, intercept, output_dir, 'Mean-Centered Drone Temperature (C)')
 
     print(f"\nDone! Created {len(correlations)} plots in {output_dir}")
 
