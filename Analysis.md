@@ -7,7 +7,7 @@ This analysis also takes into account that the drone flight path took time which
 
 ---
 ## Temperature Gains During Experiment:
-<img src="plots/drone_footage_analysis/during.png" alt="Temperature gains during experiment" width="570">
+<img src="plots/drone_footage_analysis/during.png" alt="Temperature gains during experiment" width="530">
 
 ## Temperature Analysis Results
 
