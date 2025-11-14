@@ -11,16 +11,16 @@ This analysis also takes into account that the drone flight path took time which
 
 ## Temperature Analysis Results
 
-The following table details the mean temperatures before, during, and after the dispersion event for each defined region. It also includes the calculated temperature change for the "During" and "After" periods.
+The following table details the mean temperatures before, during, and after the dispersion event for each defined region.
 
-| Region | Temp (Before) | Temp (During) | Temp (After) | Change (During - Before) | Change (After - During) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Experimental 1** | 12.364 C | 13.880 C | 12.320 C | **+1.516 C** | **-1.560 C** |
-| **Mixed 1** | 11.828 C | 13.507 C | 11.281 C | +1.679 C | -2.226 C |
-| **Mixed 2** | 12.386 C | 14.011 C | 12.192 C | +1.625 C | -1.819 C |
-| **Mixed 3** | 12.433 C | 14.619 C | 10.956 C | +2.186 C | -3.663 C |
-| **Mixed 4** | 12.435 C | 14.491 C | 11.033 C | +2.056 C | -3.458 C |
-| **Control 1** | 12.556 C | 14.746 C | 10.551 C | **+2.190 C** | **-4.195 C** |
+| Region | Temp (Before) | Temp (During) | Change (During - Before) |
+| :--- | :---: | :---: | :---: |
+| **Experimental 1** | 12.364 C | 13.880 C | **+1.516 C** |
+| **Mixed 1** | 11.828 C | 13.507 C | +1.679 C |
+| **Mixed 2** | 12.386 C | 14.011 C | +1.625 C |
+| **Mixed 3** | 12.433 C | 14.619 C | +2.186 C |
+| **Mixed 4** | 12.435 C | 14.491 C | +2.056 C |
+| **Control 1** | 12.556 C | 14.746 C | **+2.190 C** |
 
 > As shown in the table, regions most affected by the CaCO3 dispersion (e.g., Experimental 1) appear to have a smaller temperature increase during the event compared to control regions.
 
