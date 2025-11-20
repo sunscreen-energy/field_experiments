@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 from scipy.stats import linregress
-from utils import load_sensor_data, mean_center
+from ..utils import load_sensor_data, mean_center
 
 
 def compute_ambient_temperature(pyranometer_df):
@@ -114,7 +114,7 @@ def main():
     print("\nComputing correlations...")
     correlations = compute_correlations_with_temp(pyranometer_df, ambient_temp)
 
-    output_dir = Path('plots/ambient_air_correlations')
+    output_dir = Path('../plots/ambient_air_correlations')
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\nCreating plots...")

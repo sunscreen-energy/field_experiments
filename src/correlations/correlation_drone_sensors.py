@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from utils import (
+from ..utils import (
     load_sensor_data,
     group_sensors_by_location,
     parse_tif_timestamp,
@@ -175,7 +175,7 @@ def main():
         print("No correlations computed. Exiting.")
         return
 
-    output_dir = Path('plots/drone_correlations')
+    output_dir = Path('../plots/drone_correlations')
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\nCreating plots...")

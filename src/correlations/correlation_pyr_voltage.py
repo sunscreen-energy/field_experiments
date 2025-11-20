@@ -1,5 +1,5 @@
 from pathlib import Path
-from utils import load_sensor_data, compute_correlations, plot_correlation
+from ..utils import load_sensor_data, compute_correlations, plot_correlation
 
 
 def main():
@@ -25,7 +25,7 @@ def main():
         print("No correlations computed. Exiting.")
         return
 
-    output_dir = Path('plots/pyr_voltage_correlations')
+    output_dir = Path('../plots/pyr_voltage_correlations')
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\nCreating plots...")
