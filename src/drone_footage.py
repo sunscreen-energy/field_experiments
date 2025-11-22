@@ -526,7 +526,7 @@ class FlightDifference:
                       extent=geo_extent, aspect='auto')
 
         for region_masks, region_name in zip(regions, region_names):
-            combined_mask = np.ones(self.before.master_shape, dtype=bool)
+            combined_mask = np.ones(self.after.master_shape, dtype=bool)
             for mask in region_masks:
                 combined_mask &= mask
 
@@ -546,12 +546,13 @@ class FlightDifference:
                 polygon = MplPolygon(hull_geo_coords, fill=False, edgecolor='black', linewidth=2)
                 ax.add_patch(polygon)
 
-                centroid_row = np.mean(hull_geo_coords[:, 0])
-                centroid_col = np.mean(hull_geo_coords[:, 1])
+                centroid_lon = np.mean(hull_geo_coords[:, 0]) # Index 0 is Longitude/X
+                centroid_lat = np.mean(hull_geo_coords[:, 1]) # Index 1 is Latitude/Y
 
-                ax.text(centroid_col, centroid_row, region_name,
-                       fontsize=10, ha='center', va='center',
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
+                # ax.text takes (x, y)
+                ax.text(centroid_lon, centroid_lat, region_name,
+                    fontsize=10, ha='center', va='center',
+                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
 
         ax.set_xlabel('Longitude (°E)', fontsize=12)
         ax.set_ylabel('Latitude (°N)', fontsize=12)
