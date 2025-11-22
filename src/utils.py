@@ -86,77 +86,6 @@ def parse_tif_timestamp(tif_path):
     return epoch, dt
 
 
-def latlon_to_utm(lat, lon, crs='EPSG:32610'):
-    """
-    Transform lat/lon coordinates to UTM.
-
-    Args:
-        lat: Latitude
-        lon: Longitude
-        crs: Target coordinate reference system (default: EPSG:32610 - UTM Zone 10N)
-
-    Returns:
-        tuple: (x, y) in UTM coordinates
-    """
-    x, y = rasterio_transform('EPSG:4326', crs, [lon], [lat])
-    return x[0], y[0]
-
-
-def extract_temps_near_sensor(tif_path, sensor_lat, sensor_lon, radius_m=10):
-    """
-    Extract temperature values within a radius of a sensor location from a TIF file.
-
-    Args:
-        tif_path: Path to the TIF file
-        sensor_lat: Sensor latitude
-        sensor_lon: Sensor longitude
-        radius_m: Radius in meters (default: 10)
-
-    Returns:
-        numpy array of temperature values within radius, or empty array if none found
-    """
-    with rasterio.open(tif_path) as src:
-        sensor_x, sensor_y = latlon_to_utm(sensor_lat, sensor_lon, src.crs)
-
-        transform = src.transform
-
-        col, row = ~transform * (sensor_x, sensor_y)
-        col, row = int(col), int(row)
-
-        if col < 0 or col >= src.width or row < 0 or row >= src.height:
-            return np.array([])
-
-        pixel_width = abs(transform.a)
-        pixel_radius = int(np.ceil(radius_m / pixel_width))
-
-        row_start = max(0, row - pixel_radius)
-        row_end = min(src.height, row + pixel_radius + 1)
-        col_start = max(0, col - pixel_radius)
-        col_end = min(src.width, col + pixel_radius + 1)
-
-        if row_end <= row_start or col_end <= col_start:
-            return np.array([])
-
-        window = rasterio.windows.Window(col_start, row_start, col_end - col_start, row_end - row_start)
-        data = src.read(1, window=window)
-
-        temps = []
-        for r in range(data.shape[0]):
-            for c in range(data.shape[1]):
-                actual_row = row_start + r
-                actual_col = col_start + c
-                pixel_x, pixel_y = transform * (actual_col, actual_row)
-
-                distance = np.sqrt((pixel_x - sensor_x)**2 + (pixel_y - sensor_y)**2)
-
-                if distance <= radius_m:
-                    temp = data[r, c]
-                    if temp > -1000:
-                        temps.append(temp)
-
-        return np.array(temps)
-
-
 def get_pyranometer_data_at_time(pyranometer_df, epoch_time, time_window_s=60):
     """
     Get pyranometer measurements within a time window around a specific epoch time.
@@ -175,20 +104,6 @@ def get_pyranometer_data_at_time(pyranometer_df, epoch_time, time_window_s=60):
     )
 
     return pyranometer_df[time_mask]
-
-
-def mean_center(values):
-    """
-    Mean-center a set of values.
-
-    Args:
-        values: Array-like of numeric values
-
-    Returns:
-        numpy array of mean-centered values
-    """
-    values = np.array(values)
-    return values - np.nanmean(values)
 
 
 def compute_regression_pvalue(r_squared, n):
