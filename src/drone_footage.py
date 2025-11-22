@@ -12,8 +12,6 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as MplPolygon
 import matplotlib.ticker as ticker
 from scipy.spatial import ConvexHull
-from scipy.ndimage import shift as ndimage_shift
-import cv2
 from PIL import Image
 
 # Project root directory (field_experiments)
@@ -91,60 +89,6 @@ class DroneFlightPass:
 
             return dest_array, src.nodata
 
-    def _calculate_pixel_shift(self, master_arr: np.ndarray, worker_arr: np.ndarray, threshold: float = 0.5) -> tuple[float, float]:
-        """
-        Calculate sub-pixel shift between master and worker arrays using phase correlation.
-
-        Uses Sobel edge detection before correlation to handle cases where vegetation
-        has inverted contrast (bright in NDVI, dark in thermal).
-
-        Args:
-            master_arr: Reference array (from master raster)
-            worker_arr: Array to align (from other raster)
-            threshold: Minimum shift magnitude to apply (in pixels)
-
-        Returns:
-            Tuple of (dx, dy) shift values in pixels
-        """
-        # Normalize both arrays to 0-1 range
-        master_norm = (master_arr - np.nanmin(master_arr)) / (np.nanmax(master_arr) - np.nanmin(master_arr))
-        worker_norm = (worker_arr - np.nanmin(worker_arr)) / (np.nanmax(worker_arr) - np.nanmin(worker_arr))
-
-        # Replace NaN with zeros
-        master_norm = np.nan_to_num(master_norm, nan=0.0)
-        worker_norm = np.nan_to_num(worker_norm, nan=0.0)
-
-        # Convert to uint8 for Sobel (requires 0-255 range)
-        master_uint8 = (master_norm * 255).astype(np.uint8)
-        worker_uint8 = (worker_norm * 255).astype(np.uint8)
-
-        # Apply Sobel edge detection to extract structural features
-        # Compute gradients in x and y directions
-        master_sobel_x = cv2.Sobel(master_uint8, cv2.CV_64F, 1, 0, ksize=3)
-        master_sobel_y = cv2.Sobel(master_uint8, cv2.CV_64F, 0, 1, ksize=3)
-        worker_sobel_x = cv2.Sobel(worker_uint8, cv2.CV_64F, 1, 0, ksize=3)
-        worker_sobel_y = cv2.Sobel(worker_uint8, cv2.CV_64F, 0, 1, ksize=3)
-
-        # Compute gradient magnitude (edge strength)
-        master_edges = np.sqrt(master_sobel_x**2 + master_sobel_y**2)
-        worker_edges = np.sqrt(worker_sobel_x**2 + worker_sobel_y**2)
-
-        # Normalize edge images to 0-1 and convert to float32 for phase correlation
-        master_edges = (master_edges / np.max(master_edges)).astype(np.float32)
-        worker_edges = (worker_edges / np.max(worker_edges)).astype(np.float32)
-
-        # Calculate phase correlation on edge images
-        shift, _ = cv2.phaseCorrelate(master_edges, worker_edges)
-
-        dx, dy = shift
-
-        # Only apply shift if magnitude exceeds threshold
-        magnitude = np.sqrt(dx**2 + dy**2)
-        if magnitude < threshold:
-            return 0.0, 0.0
-
-        return dx, dy
-
     def _load_flight_data(self, verbose: bool):
         """Load all TIF files matching this timestamp and align to master grid."""
         pattern = f"{self.timestamp}_ORTHO_*.tif"
@@ -155,49 +99,30 @@ class DroneFlightPass:
 
         all_channels = []
         channel_idx = 0
-        master_data = None
 
-        # First, load the master reference if it's in this timestamp
-        for tif_path in tif_files:
-            if tif_path == self.master_reference_path:
-                with rasterio.open(tif_path) as src:
-                    master_data = src.read()
-                    if master_data.ndim == 2:
-                        master_data = master_data[np.newaxis, :, :]
+        with rasterio.open(self.master_reference_path) as src:
+            master_data = src.read()
+            if master_data.ndim == 2:
+                master_data = master_data[np.newaxis, :, :]
 
-                    # Initialize nodata mask from master raster
-                    nodata_value = src.nodata
-                    if nodata_value is not None:
-                        self.nodata_mask = master_data[0] == nodata_value
-                    else:
-                        self.nodata_mask = np.zeros(self.master_shape, dtype=bool)
-                break
+            nodata_value = src.nodata
+            if nodata_value is not None:
+                self.nodata_mask = master_data[0] == nodata_value
+            else:
+                self.nodata_mask = np.zeros(self.master_shape, dtype=bool)
 
-        # If master is not in this timestamp, initialize empty mask
-        if self.nodata_mask is None:
-            self.nodata_mask = np.zeros(self.master_shape, dtype=bool)
-
-        # Now process all files
+        # Process all files for this timestamp
         for tif_path in tif_files:
             channel_type = tif_path.stem.split("_ORTHO_")[1]
 
-            # Load data: directly if master, else warp
+            # Load and align data
             if tif_path == self.master_reference_path:
                 aligned_image = master_data
                 nodata_value = self.master_nodata
             else:
                 aligned_image, nodata_value = self._warp_to_master(tif_path)
 
-                # Apply sub-pixel registration if master data is available
-                if master_data is not None:
-                    # Use first band of each for alignment
-                    dx, dy = self._calculate_pixel_shift(master_data[0], aligned_image[0])
-                    if dx != 0.0 or dy != 0.0:
-                        # Apply shift to all bands
-                        for band_idx in range(aligned_image.shape[0]):
-                            aligned_image[band_idx] = ndimage_shift(aligned_image[band_idx], (dy, dx), order=1, mode='constant', cval=0)
-
-            # Update nodata mask (union of invalid pixels)
+            # Update nodata mask (union of invalid pixels across all channels)
             if nodata_value is not None:
                 self.nodata_mask |= (aligned_image[0] == nodata_value)
 
@@ -225,58 +150,7 @@ class DroneFlightPass:
             print(f"Available channels ({len(self.channel_map)}):")
             for channel_name, idx in sorted(self.channel_map.items(), key=lambda x: x[1]):
                 print(f"  {idx:2d}: {channel_name}")
-                self.verify_alignment(channel_name)
             print(f"Data shape: {self.data.shape} (channels, height, width)")
-
-    def verify_alignment(self, channel_name: str, output_dir: str | Path = PROJECT_ROOT / "plots" / "drone_verified_alignment"):
-        """
-        Generate a visual overlay to verify alignment between the master reference and any data channel.
-
-        Creates an RGB image with:
-        - GREEN Channel: Master reference (fixed anchor)
-        - RED Channel: Target channel (the data you want to check)
-        
-        Result:
-        - Perfect alignment = Sharp Yellow features (Red + Green).
-        - Misalignment = Distinct Red or Green "ghosting" edges.
-
-        Args:
-            channel_name: Name of the channel to compare. If None, defaults to the first available channel.
-            output_dir: Directory to save verification image.
-        """
-        if channel_name not in self.channel_map:
-            raise ValueError(f"Channel '{channel_name}' not found. Available: {list(self.channel_map.keys())}")
-
-        # Load master reference data
-        with rasterio.open(self.master_reference_path) as src:
-            master_data = src.read(1).astype(np.float32)
-
-        # Get thermal data
-        target_idx = self.channel_map[channel_name]
-        target_data = self.data[target_idx].astype(np.float32)
-
-        # Normalize both to 0-1 range
-        master_norm = (master_data - np.nanmin(master_data)) / (np.nanmax(master_data) - np.nanmin(master_data))
-        thermal_norm = (target_data - np.nanmin(target_data)) / (np.nanmax(target_data) - np.nanmin(target_data))
-
-        # Create RGB overlay: Red = thermal, Green = master, Blue = 0
-        rgb_overlay = np.zeros((*self.master_shape, 3), dtype=np.uint8)
-        rgb_overlay[:, :, 0] = (thermal_norm * 255).astype(np.uint8)  # Red channel
-        rgb_overlay[:, :, 1] = (master_norm * 255).astype(np.uint8)   # Green channel
-
-        output_dir = Path(output_dir)
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{self.timestamp}_alignment_check.jpg"
-
-        
-        img = Image.fromarray(rgb_overlay)
-        img.save(output_path, quality=85)
-
-        print(f"Alignment verification saved to: {output_path}")
-        print(f"Green = Master ({self.master_reference_path.name})")
-        print(f"Red = ({channel_name})")
-        print("Properly aligned areas will show consistent patterns (yellow where both overlap)")
 
     def create_mask_from_polygon(self, polygon_coords: list[tuple[float, float]]) -> np.ndarray:
         """

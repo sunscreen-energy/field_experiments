@@ -183,3 +183,59 @@ Instead of defining an arbitrary `RESOLUTION_HEIGHT/WIDTH`, I will pass a specif
       * **Action:** Generate a temporary low-res JPG overlaying the Master (Green channel) and a Thermal layer (Red channel) to visually check if trees/rows line up.4
         * Save to plots/{date}/verify_tif_alignment
 
+! -- better alignment
+
+
+The current `src/drone_footage.py:verify_alignment` code fails because linear `Min/Max` normalization is highly sensitive to outliers (glints, shadows), crushing all terrain details into a single color. To fix this, you should:
+
+**Clip Outliers:** Use percentile-based normalization to ignore the top/bottom 2% of pixel values.
+You need to swap your current Min/Max math for a "Robust" normalization that handles outliers.
+
+  * **Current issue:** `(data - min) / (max - min)`
+  * **New Goal:** Clip data between the 2nd and 98th percentiles.
+
+
+### Fix Pixel Shift
+
+_calculate_pixel_shift is very bad at detecting the correct pixel shifts.
+When I set threshold to 100000 (never using the pixel shift), i get a mismatch of a few pixels.
+But when I set the threshold to the original value, I get a major misalignment
+
+Write a plotting debugging function to get a better sense of the edges present in both images and see if they can align. If this plotting shows an obvious reason for misalignment, try to fix the code and re-plot. Otherwise leave the plots and I will try to investigate the issue
+
+Here's some code you can add at the bottom in an `if __name__ == "__main__"` section to test
+
+```Python
+os.chdir(PROJECT_ROOT)
+MASTER_REF = Path("data/2025-11-07/drone_imaging/2025-11-07T1248PST_ORTHO_NDVI.tif")
+DATA_DIR = Path("data/2025-11-07/drone_imaging/")
+first_flight_pass = DroneFlightPass(
+    timestamp = "2025-11-07T1101PST", 
+    master_reference_path = MASTER_REF,
+    data_dir=DATA_DIR    
+)
+```
+
+! --- Debug
+
+The normalization logic is crushing the crop rows.
+
+You aren't seeing rows because your nodata (background) values—which are likely 0 or very low numbers—are skewing your percentile calculations.
+
+If your image is 80% black border (value 0) and 20% field (values 0.6–0.8), the "2nd percentile" is 0. Your normalization stretches 0 to 0.8 across the 0-255 range. The difference between a leaf (0.8) and soil (0.6) becomes compressed into a tiny, invisible range of white pixels (e.g., 250 vs 255).
+
+Here is the solution to reveal the rows and fix the alignment.
+
+The Fix: CLAHE (Contrast Limited Adaptive Histogram Equalization)
+
+Standard normalization is "Global"—it looks at the whole image. We need "Local" contrast to make crop rows pop out, regardless of whether they are in a bright or dark part of the field.
+
+1. Update _calculate_pixel_shift
+
+Replace your normalization logic with this robust pipeline:
+
+    Mask Nodata: Explicitly ignore 0s or nodata values so they don't skew stats.
+
+    CLAHE: Apply adaptive contrast enhancement.
+
+    Canny Edges: Switch from Sobel to Canny for cleaner lines.
