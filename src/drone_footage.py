@@ -231,7 +231,7 @@ class DroneFlightPass:
                 results.append(np.nan)
             else:
                 if mode == 'mean':
-                    results.append(np.nanmean(values))
+                    results.append(float(np.nanmean(values)))
                 elif mode == 'min':
                     results.append(np.nanmin(values))
                 elif mode == 'max':
@@ -243,14 +243,65 @@ class DroneFlightPass:
 
         return results
 
-    def visualize(self, regions: list[list[np.ndarray]], region_names: list[str],
-                  channel: str, mean_center: bool = False, colormap: str = "coolwarm",
-                  vmin: float | None = None, vmax: float | None = None):
+    def visualize_channel_distribution(self, region: list[np.ndarray], channel: str, bins: int = 50):
         """
-        Visualize a channel with region overlays.
+        Plot a histogram of channel values within a specified region.
 
         Args:
-            regions: List of region definitions
+            region: List of masks that define the region (combined with bitwise AND)
+            channel: Channel name to visualize
+            bins: Number of histogram bins (default: 50)
+        """
+        if channel not in self.channel_map:
+            raise ValueError(f"Channel '{channel}' not found. Available: {list(self.channel_map.keys())}")
+
+        channel_idx = self.channel_map[channel]
+        channel_data = self.data[channel_idx]
+
+        # Combine masks to define the region
+        combined_mask = np.ones(self.master_shape, dtype=bool)
+        for mask in region:
+            combined_mask &= mask
+
+        # Exclude nodata pixels
+        combined_mask &= ~self.nodata_mask
+
+        # Extract values from the region
+        values = channel_data[combined_mask]
+
+        if len(values) == 0:
+            print(f"Warning: No valid pixels found in region for channel '{channel}'")
+            return
+
+        # Create histogram
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        counts, bin_edges, patches = ax.hist(values, bins=bins, edgecolor='black', alpha=0.7)
+
+        ax.set_xlabel(f'{channel} Value', fontsize=12)
+        ax.set_ylabel('Frequency', fontsize=12)
+        ax.set_title(f'{self.timestamp} - {channel} Distribution\n({len(values):,} pixels)', fontsize=14)
+
+        # Add statistics text
+        stats_text = f'Mean: {np.mean(values):.3f}\nMedian: {np.median(values):.3f}\nStd: {np.std(values):.3f}'
+        ax.text(0.98, 0.97, stats_text,
+                transform=ax.transAxes,
+                verticalalignment='top',
+                horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                fontsize=10)
+
+        plt.tight_layout()
+        plt.show()
+
+    def visualize(self, regions: list[list[np.ndarray]], region_names: list[str],
+                channel: str, mean_center: bool = False, colormap: str = "coolwarm",
+                vmin: float | None = None, vmax: float | None = None, show_fig: bool = True):
+        """
+        Visualize a channel with region overlays using Geographic Coordinates.
+
+        Args:
+            regions: List of region definitions.
             region_names: Names for each region
             channel: Channel to visualize
             mean_center: If True, subtract mean from data before visualization
@@ -271,59 +322,65 @@ class DroneFlightPass:
 
         fig, ax = plt.subplots(figsize=(14, 10))
 
-        extent_meters = [0, self.master_shape[1], self.master_shape[0], 0]
+        height, width = self.master_shape
+        left_lon, top_lat = rasterio.transform.xy(self.transform, 0, 0, offset='center')
+        right_lon, bottom_lat = rasterio.transform.xy(self.transform, height, width, offset='center')
+        
+        geo_extent = [left_lon, right_lon, top_lat, bottom_lat]
 
+        # --- 2. Plot Image with Geographic Extent ---
         im = ax.imshow(masked_data, cmap=colormap, vmin=vmin, vmax=vmax,
-                      extent=extent_meters, aspect='auto')
+                    extent=geo_extent, aspect='auto')
 
         for region_masks, region_name in zip(regions, region_names):
             combined_mask = np.ones(self.master_shape, dtype=bool)
             for mask in region_masks:
                 combined_mask &= mask
 
+            # Get pixel indices (rows, cols)
             points = np.column_stack(np.where(combined_mask))
 
             if len(points) >= 3:
                 hull = ConvexHull(points)
-                hull_points = points[hull.vertices]
+                hull_indices = points[hull.vertices] # These are (row, col) pixels
+                
+                # --- 3. Convert Polygon Pixels to Lat/Lon ---
+                hull_geo_coords = []
+                for row, col in hull_indices:
+                    lon, lat = rasterio.transform.xy(self.transform, row, col, offset='center')
+                    hull_geo_coords.append([lon, lat])
+                
+                hull_geo_coords = np.array(hull_geo_coords)
 
-                hull_coords = np.column_stack([hull_points[:, 1], hull_points[:, 0]])
-
-                polygon = MplPolygon(hull_coords, fill=False, edgecolor='black', linewidth=2)
+                # Create polygon using Longitude (x) and Latitude (y)
+                polygon = MplPolygon(hull_geo_coords, fill=False, edgecolor='black', linewidth=2)
                 ax.add_patch(polygon)
 
-                centroid_row = np.mean(hull_points[:, 0])
-                centroid_col = np.mean(hull_points[:, 1])
+                # Calculate centroid in Lat/Lon for the text label
+                centroid_lon = np.mean(hull_geo_coords[:, 0])
+                centroid_lat = np.mean(hull_geo_coords[:, 1])
 
-                ax.text(centroid_col, centroid_row, region_name,
-                       fontsize=10, ha='center', va='center',
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
+                ax.text(centroid_lon, centroid_lat, region_name,
+                        fontsize=12, ha='center', va='center',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
 
-        ax.set_xlabel('Distance East (pixels)', fontsize=12)
-        ax.set_ylabel('Distance North (pixels)', fontsize=12)
+        # --- 4. Format Single Axis ---
+        ax.set_xlabel('Longitude (°E)', fontsize=12)
+        ax.set_ylabel('Latitude (°N)', fontsize=12)
         ax.set_title(f'{self.timestamp} - {channel}', fontsize=14)
 
-        def pixels_to_lon(x):
-            lon, _ = rasterio.transform.xy(self.transform, 0, x, offset='center')
-            return lon
+        # Format ticks to show precision (decimals)
+        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
+        ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
 
-        def pixels_to_lat(y):
-            _, lat = rasterio.transform.xy(self.transform, y, 0, offset='center')
-            return lat
-
-        secax_x = ax.secondary_xaxis('top', functions=(pixels_to_lon, lambda x: x))
-        secax_x.set_xlabel('Longitude (°E)', fontsize=10)
-        secax_x.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.6f'))
-
-        secax_y = ax.secondary_yaxis('right', functions=(pixels_to_lat, lambda y: y))
-        secax_y.set_ylabel('Latitude (°N)', fontsize=10)
-        secax_y.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.6f'))
-
-        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.15)
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         cbar.set_label(channel, fontsize=12)
 
         plt.tight_layout()
-        plt.show()
+        if show_fig:
+            plt.show()
+
+        return fig
 
     def strip_band(self, polygon_coords: list[tuple[float, float]], num_bands: int) -> list[list[tuple[float, float]]]:
         """
@@ -334,7 +391,7 @@ class DroneFlightPass:
             num_bands: Number of horizontal bands to create
 
         Returns:
-            List of polygon coordinate lists, one for each band
+            List of polygon coordinate lists, one for each band (intersection of original polygon with each band)
         """
         polygon = Polygon(polygon_coords)
         min_y = min(coord[1] for coord in polygon_coords)
@@ -350,14 +407,23 @@ class DroneFlightPass:
             min_x = min(coord[0] for coord in polygon_coords)
             max_x = max(coord[0] for coord in polygon_coords)
 
-            band_polygon = [
+            band_rect = Polygon([
                 (min_x, band_min_y),
                 (max_x, band_min_y),
                 (max_x, band_max_y),
                 (min_x, band_max_y)
-            ]
+            ])
 
-            bands.append(band_polygon)
+            intersection = polygon.intersection(band_rect)
+
+            if intersection.is_empty:
+                continue
+            elif hasattr(intersection, 'exterior'):
+                band_coords = list(intersection.exterior.coords[:-1])
+            else:
+                continue
+
+            bands.append(band_coords)
 
         return bands
 
@@ -416,7 +482,7 @@ class FlightDifference:
 
     def visualize(self, regions: list[list[np.ndarray]], region_names: list[str],
                   channel: str, mean_center: bool = False, colormap: str = "coolwarm",
-                  vmin: float | None = None, vmax: float | None = None):
+                  vmin: float | None = None, vmax: float | None = None, show_fig=True):
         """
         Visualize pixel-wise difference between flights.
 
@@ -450,10 +516,14 @@ class FlightDifference:
 
         fig, ax = plt.subplots(figsize=(14, 10))
 
-        extent_meters = [0, self.before.master_shape[1], self.before.master_shape[0], 0]
+        height, width = self.after.master_shape
+        left_lon, top_lat = rasterio.transform.xy(self.after.transform, 0, 0, offset='center')
+        right_lon, bottom_lat = rasterio.transform.xy(self.after.transform, height, width, offset='center')
+
+        geo_extent = [left_lon, right_lon, top_lat, bottom_lat]
 
         im = ax.imshow(masked_diff, cmap=colormap, vmin=vmin, vmax=vmax,
-                      extent=extent_meters, aspect='auto')
+                      extent=geo_extent, aspect='auto')
 
         for region_masks, region_name in zip(regions, region_names):
             combined_mask = np.ones(self.before.master_shape, dtype=bool)
@@ -464,42 +534,38 @@ class FlightDifference:
 
             if len(points) >= 3:
                 hull = ConvexHull(points)
-                hull_points = points[hull.vertices]
+                hull_indices = points[hull.vertices]
 
-                hull_coords = np.column_stack([hull_points[:, 1], hull_points[:, 0]])
+                hull_geo_coords = []
+                for row, col in hull_indices:
+                    lon, lat = rasterio.transform.xy(self.after.transform, row, col, offset='center')
+                    hull_geo_coords.append([lon, lat])
+                
+                hull_geo_coords = np.array(hull_geo_coords)
 
-                polygon = MplPolygon(hull_coords, fill=False, edgecolor='black', linewidth=2)
+                polygon = MplPolygon(hull_geo_coords, fill=False, edgecolor='black', linewidth=2)
                 ax.add_patch(polygon)
 
-                centroid_row = np.mean(hull_points[:, 0])
-                centroid_col = np.mean(hull_points[:, 1])
+                centroid_row = np.mean(hull_geo_coords[:, 0])
+                centroid_col = np.mean(hull_geo_coords[:, 1])
 
                 ax.text(centroid_col, centroid_row, region_name,
                        fontsize=10, ha='center', va='center',
                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
 
-        ax.set_xlabel('Distance East (pixels)', fontsize=12)
-        ax.set_ylabel('Distance North (pixels)', fontsize=12)
+        ax.set_xlabel('Longitude (°E)', fontsize=12)
+        ax.set_ylabel('Latitude (°N)', fontsize=12)
         ax.set_title(f'{channel} Difference: {self.after.timestamp} - {self.before.timestamp}', fontsize=14)
 
-        def pixels_to_lon(x):
-            lon, _ = rasterio.transform.xy(self.before.transform, 0, x, offset='center')
-            return lon
-
-        def pixels_to_lat(y):
-            _, lat = rasterio.transform.xy(self.before.transform, y, 0, offset='center')
-            return lat
-
-        secax_x = ax.secondary_xaxis('top', functions=(pixels_to_lon, lambda x: x))
-        secax_x.set_xlabel('Longitude (°E)', fontsize=10)
-        secax_x.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.6f'))
-
-        secax_y = ax.secondary_yaxis('right', functions=(pixels_to_lat, lambda y: y))
-        secax_y.set_ylabel('Latitude (°N)', fontsize=10)
-        secax_y.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.6f'))
+        # Format ticks to show precision (decimals)
+        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
+        ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
 
         cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.15)
         cbar.set_label(f'{channel} Difference', fontsize=12)
 
         plt.tight_layout()
-        plt.show()
+        if show_fig:
+            plt.show()
+        
+        return fig

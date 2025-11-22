@@ -239,3 +239,7 @@ Replace your normalization logic with this robust pipeline:
     CLAHE: Apply adaptive contrast enhancement.
 
     Canny Edges: Switch from Sobel to Canny for cleaner lines.
+
+! - v ch dist
+
+Add a function, `visualize_channel_distribution` that allows the user to specify a region (list of masks) and a channel, and plots a histogram of that channel's data for that region
