@@ -1,0 +1,13 @@
+Construct a report for the file `src/2025-11-07.ipynb`. This file goes through several drone flight runs which capture temperature and other kinds of data. The first thing I do is create a vegetation mask that I apply to most of the analysis. This vegetation mask ensures that the analysis is done on the plant temperatures only rather than the ground temperature.
+
+There is an experimental region which is a trapezoidal region where our sunscreen deployment can have effect. And then there's also a control region where we're confident that our sunscreen did not have an effect. The first thing we did was we plotted the temperature at all time steps.
+
+You can see that in general, even before the sunscreen deployment occurs, the northern part of the field is warmer than the southern part. And this has been supported by several drone passes and temperature measurements that are taken. So the report should mention that briefly.
+
+To correct for this effect, we used a horizontal strip band method where horizontal bands split up the experimental region, and then the temperature changes in these bands were measured for each time step where temperature was measured. There was only one time stamp within the dispersion interval where RGB and temperature was measured, but it's very helpful to see that the RGB reflectance, when thresholded to certain values, this corresponds to the calcium carbonate plume, and that plume is associated with much cooler regions than the control region and also the remainder of the experimental region. 
+
+You should also mention that this experiment shows a little bit of inconsistency where it seems that the plume takes a while to establish a cooling effect, whereas other experiments had a near instantaneous cooling effect or a cooling effect demonstrated across all drone flights. In this experiment, the cooling effect is most pronounced in the latter two drone flights, but that's probably due to confounding factors. 
+
+Please replace `Analysis.md` with your report. The reports should be converted into a PDF using `scratch/markdown_to_pdf.py`. The points I've made here are important to include in the markdown document, but you should first identify the code/figures in `src/2025-11-07.ipynb` that support these conclusions, and then write the report in a much more coherent manner (this prompt has been a bit rambling). In the report, include 1-2 figures per claim, and put the remaining figures in the appendix with a descriptive caption.
+
+There's no need to be verbose in this report, but the writing should be formal and clear. An investor or farmer should be able to understand what we've done here.

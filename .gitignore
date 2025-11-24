@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+src/.ipynb_checkpoints
 
 # Virtual environments
 .venv
@@ -16,4 +17,3 @@ CLAUDE.md
 scratch/
 data/
 plots/
-DATA_DOCUMENTATION.md
