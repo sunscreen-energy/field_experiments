@@ -11,8 +11,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as MplPolygon
 import matplotlib.ticker as ticker
+from rasterio.features import shapes
+from shapely.geometry import shape, MultiPolygon
 from scipy.spatial import ConvexHull
-from PIL import Image
+from shapely import convex_hull
 
 # Project root directory (field_experiments)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -180,7 +182,7 @@ class DroneFlightPass:
         Args:
             channel: Channel name to use for masking
             threshold: Threshold value
-            greater_than: If True, mask where values > threshold; otherwise mask where values <= threshold
+            greater_than: If True, mask = values > threshold; otherwise mask where values <= threshold
 
         Returns:
             Binary mask array
@@ -243,7 +245,7 @@ class DroneFlightPass:
 
         return results
 
-    def visualize_channel_distribution(self, region: list[np.ndarray], channel: str, bins: int = 50):
+    def visualize_channel_distribution(self, region: list[np.ndarray], channel: str, bins: int = 50, clip=[-float('inf'), float('inf')]):
         """
         Plot a histogram of channel values within a specified region.
 
@@ -268,6 +270,7 @@ class DroneFlightPass:
 
         # Extract values from the region
         values = channel_data[combined_mask]
+        values = np.clip(values, clip[0], clip[1])
 
         if len(values) == 0:
             print(f"Warning: No valid pixels found in region for channel '{channel}'")
@@ -293,6 +296,7 @@ class DroneFlightPass:
 
         plt.tight_layout()
         plt.show()
+        return values
 
     def visualize(self, regions: list[list[np.ndarray]], region_names: list[str],
                 channel: str, mean_center: bool = False, colormap: str = "coolwarm",
@@ -325,17 +329,18 @@ class DroneFlightPass:
         height, width = self.master_shape
         left_lon, top_lat = rasterio.transform.xy(self.transform, 0, 0, offset='center')
         right_lon, bottom_lat = rasterio.transform.xy(self.transform, height, width, offset='center')
-        
-        geo_extent = [left_lon, right_lon, top_lat, bottom_lat]
+
+        geo_extent = [left_lon, right_lon, bottom_lat, top_lat]
 
         # --- 2. Plot Image with Geographic Extent ---
         im = ax.imshow(masked_data, cmap=colormap, vmin=vmin, vmax=vmax,
-                    extent=geo_extent, aspect='auto')
+                    extent=geo_extent, aspect='auto', origin='upper')
 
         for region_masks, region_name in zip(regions, region_names):
             combined_mask = np.ones(self.master_shape, dtype=bool)
             for mask in region_masks:
                 combined_mask &= mask
+            combined_mask &= self.nodata_mask
 
             # Get pixel indices (rows, cols)
             points = np.column_stack(np.where(combined_mask))
@@ -370,6 +375,64 @@ class DroneFlightPass:
         ax.set_title(f'{self.timestamp} - {channel}', fontsize=14)
 
         # Format ticks to show precision (decimals)
+        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
+        ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
+
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label(channel, fontsize=12)
+
+        plt.tight_layout()
+        if show_fig:
+            plt.show()
+
+        return fig
+
+    def visualize_mask(self, mask: np.ndarray, channel: str, colormap: str = "viridis",
+                      vmin: float | None = None, vmax: float | None = None,
+                      mask_alpha: float = 0.4, mask_color: str = 'red', show_fig: bool = True):
+        """
+        Visualize a channel with a shaded overlay where the mask is True.
+
+        Args:
+            mask: Binary mask array (True values will be shaded)
+            channel: Channel name to visualize
+            colormap: Matplotlib colormap for the channel data
+            vmin: Minimum value for channel colormap (None for auto)
+            vmax: Maximum value for channel colormap (None for auto)
+            mask_alpha: Transparency of the mask overlay (0=transparent, 1=opaque)
+            mask_color: Color for the mask shading
+            show_fig: If True, display the figure
+        """
+        if channel not in self.channel_map:
+            raise ValueError(f"Channel '{channel}' not found. Available: {list(self.channel_map.keys())}")
+
+        if mask.shape != self.master_shape:
+            raise ValueError(f"Mask shape {mask.shape} does not match data shape {self.master_shape}")
+
+        channel_idx = self.channel_map[channel]
+        channel_data = self.data[channel_idx].copy()
+
+        masked_data = np.ma.masked_where(self.nodata_mask, channel_data)
+
+        fig, ax = plt.subplots(figsize=(14, 10))
+
+        height, width = self.master_shape
+        left_lon, top_lat = rasterio.transform.xy(self.transform, 0, 0, offset='center')
+        right_lon, bottom_lat = rasterio.transform.xy(self.transform, height, width, offset='center')
+
+        geo_extent = [left_lon, right_lon, bottom_lat, top_lat]
+
+        im = ax.imshow(masked_data, cmap=colormap, vmin=vmin, vmax=vmax,
+                      extent=geo_extent, aspect='auto', origin='upper')
+
+        mask_overlay = np.ma.masked_where(~mask, np.ones_like(mask, dtype=float))
+        ax.imshow(mask_overlay, cmap=plt.cm.colors.ListedColormap([mask_color]), alpha=mask_alpha,
+                 extent=geo_extent, aspect='auto', origin='upper')
+
+        ax.set_xlabel('Longitude (°E)', fontsize=12)
+        ax.set_ylabel('Latitude (°N)', fontsize=12)
+        ax.set_title(f'{self.timestamp} - {channel} with Mask Overlay', fontsize=14)
+
         ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
         ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
 
@@ -433,7 +496,7 @@ class FlightDifference:
     Computes and visualizes differences between two drone flight passes.
     """
 
-    def __init__(self, before_timestamp: str, after_timestamp: str, master_reference_path: str | Path, data_dir: str | Path | None = None):
+    def __init__(self, before_timestamp: str, after_timestamp: str, master_reference_path: str | Path, data_dir: str | Path | None = None, verbose=False):
         """
         Initialize flight difference analyzer.
 
@@ -443,23 +506,11 @@ class FlightDifference:
             master_reference_path: Path to the master reference raster that defines the target grid
             data_dir: Directory containing drone imagery files (defaults to PROJECT_ROOT/data/2025-11-07/drone_imaging)
         """
-        self.before = DroneFlightPass(before_timestamp, master_reference_path, data_dir, verbose=False)
-        self.after = DroneFlightPass(after_timestamp, master_reference_path, data_dir, verbose=False)
+        self.before = DroneFlightPass(before_timestamp, master_reference_path, data_dir, verbose=verbose)
+        self.after = DroneFlightPass(after_timestamp, master_reference_path, data_dir, verbose=verbose)
 
         print(f"Initialized FlightDifference: {before_timestamp} -> {after_timestamp}")
         print(f"Common channels: {set(self.before.channel_map.keys()) & set(self.after.channel_map.keys())}")
-
-    def create_mask_from_polygon(self, polygon_coords: list[tuple[float, float]]) -> np.ndarray:
-        """Create mask from polygon using the before flight pass."""
-        return self.before.create_mask_from_polygon(polygon_coords)
-
-    def create_mask_from_feature(self, channel: str, threshold: float, greater_than: bool = False) -> np.ndarray:
-        """Create mask from feature using the before flight pass."""
-        return self.before.create_mask_from_feature(channel, threshold, greater_than)
-
-    def strip_band(self, polygon_coords: list[tuple[float, float]], num_bands: int) -> list[list[tuple[float, float]]]:
-        """Divide polygon into horizontal bands."""
-        return self.before.strip_band(polygon_coords, num_bands)
 
     def query_regions(self, regions: list[list[np.ndarray]], channel: str, mode: str = 'mean') -> list[float]:
         """
@@ -481,7 +532,7 @@ class FlightDifference:
         return differences
 
     def visualize(self, regions: list[list[np.ndarray]], region_names: list[str],
-                  channel: str, mean_center: bool = False, colormap: str = "coolwarm",
+                  channel: str, aggregate_frac = 0.2, mean_center: bool = False, colormap: str = "coolwarm",
                   vmin: float | None = None, vmax: float | None = None, show_fig=True):
         """
         Visualize pixel-wise difference between flights.
@@ -520,42 +571,42 @@ class FlightDifference:
         left_lon, top_lat = rasterio.transform.xy(self.after.transform, 0, 0, offset='center')
         right_lon, bottom_lat = rasterio.transform.xy(self.after.transform, height, width, offset='center')
 
-        geo_extent = [left_lon, right_lon, top_lat, bottom_lat]
+        geo_extent = [left_lon, right_lon, bottom_lat, top_lat]
 
         im = ax.imshow(masked_diff, cmap=colormap, vmin=vmin, vmax=vmax,
-                      extent=geo_extent, aspect='auto')
+                      extent=geo_extent, aspect='auto', origin='upper')
 
         for region_masks, region_name in zip(regions, region_names):
             combined_mask = np.ones(self.after.master_shape, dtype=bool)
             for mask in region_masks:
                 combined_mask &= mask
+            combined_mask &= valid_mask
+            blob_geoms = [
+                shape(geom) for geom, val 
+                in shapes(combined_mask.astype('uint8'), transform=self.after.transform) 
+                if val == 1
+            ]
 
-            points = np.column_stack(np.where(combined_mask))
-
-            if len(points) >= 3:
-                hull = ConvexHull(points)
-                hull_indices = points[hull.vertices]
-
-                hull_geo_coords = []
-                for row, col in hull_indices:
-                    lon, lat = rasterio.transform.xy(self.after.transform, row, col, offset='center')
-                    hull_geo_coords.append([lon, lat])
+            if blob_geoms:
+                blob_geoms.sort(key=lambda x: x.area, reverse=True)
+                num_to_keep = max(1, int(len(blob_geoms) * aggregate_frac))
                 
-                hull_geo_coords = np.array(hull_geo_coords)
-
+                hull = MultiPolygon(blob_geoms[:num_to_keep]).convex_hull
+            
+                hull_geo_coords = np.array(hull.exterior.coords)
                 polygon = MplPolygon(hull_geo_coords, fill=False, edgecolor='black', linewidth=2)
                 ax.add_patch(polygon)
 
                 centroid_lon = np.mean(hull_geo_coords[:, 0]) # Index 0 is Longitude/X
                 centroid_lat = np.mean(hull_geo_coords[:, 1]) # Index 1 is Latitude/Y
 
-                # ax.text takes (x, y)
+                print(region_name)
                 ax.text(centroid_lon, centroid_lat, region_name,
                     fontsize=10, ha='center', va='center',
                     bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
 
-        ax.set_xlabel('Longitude (°E)', fontsize=12)
-        ax.set_ylabel('Latitude (°N)', fontsize=12)
+        ax.set_xlabel('Longitude (m)', fontsize=12)
+        ax.set_ylabel('Latitude (m)', fontsize=12)
         ax.set_title(f'{channel} Difference: {self.after.timestamp} - {self.before.timestamp}', fontsize=14)
 
         # Format ticks to show precision (decimals)

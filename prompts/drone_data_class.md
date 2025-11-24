@@ -243,3 +243,7 @@ Replace your normalization logic with this robust pipeline:
 ! - v ch dist
 
 Add a function, `visualize_channel_distribution` that allows the user to specify a region (list of masks) and a channel, and plots a histogram of that channel's data for that region
+
+! Other date analysis
+
+Run `cp src/2025-11-07.ipynb src/2025-10-18.ipynb` and edit the new notebook to refer to the data in `data/2025-10-18/drone_imaging`. Read through Analysis.md to get a sense of what we did for 11-07. For the new notebook, make a vegetation mask from NDRE >= 0.12
