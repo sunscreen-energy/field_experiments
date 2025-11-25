@@ -11,3 +11,18 @@ You should also mention that this experiment shows a little bit of inconsistency
 Please replace `Analysis.md` with your report. The reports should be converted into a PDF using `scratch/markdown_to_pdf.py`. The points I've made here are important to include in the markdown document, but you should first identify the code/figures in `src/2025-11-07.ipynb` that support these conclusions, and then write the report in a much more coherent manner (this prompt has been a bit rambling). In the report, include 1-2 figures per claim, and put the remaining figures in the appendix with a descriptive caption.
 
 There's no need to be verbose in this report, but the writing should be formal and clear. An investor or farmer should be able to understand what we've done here.
+
+! -- New date
+
+In Analysis.md we analyze `src/2025-11-07.ipynb`. We now have `src/2025-11-07.ipynb` to analyze as well. 
+Make an analysis directory with subdirectories for dates. Inside each date subdirectory we should have a markdown file and PDF. Move `scratch/markdown_to_pdf.py` to this Analyses directory and after you have written the
+analysis for 10-18 convert it to a pdf.
+
+Here are the important points to capture for 10-18:
+
+We could not create a vegetation mask because the NDRE pass was during spraying
+We can do RGB based plume identification but need a more sophisticated method.
+We see a strong "shadow of plume" effect in temperature plots.
+The experimental region shows lower temperature increases than the control region.
+
+Although these are things that we'd like to mention, your analysis should be mainly come from reading the ipynb notebook itself.
