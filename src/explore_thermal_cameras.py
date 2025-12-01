@@ -190,166 +190,189 @@ def plot_sample_frames_during_dispersion(control_df, experimental_df, pixel_cols
     plt.close()
     print(f"Saved sample frames to {output_path}")
 
-
-def plot_temporal_analysis(control_df, experimental_df, pixel_cols, plots_dir, config):
+def calculate_effective_sample_size(data):
     """
-    Plot temporal analysis of thermal camera data using temperature anomalies.
-    Anomalies are calculated as difference from each pixel's temporal mean.
-
-    Args:
-        control_df: Control camera dataframe
-        experimental_df: Experimental camera dataframe
-        pixel_cols: List of pixel column names
-        plots_dir: Directory to save plots
-        config: Configuration dictionary
+    Calculate Effective Sample Size (N_eff) correcting for temporal autocorrelation.
+    Uses the Lag-1 autocorrelation coefficient (rho).
+    Formula: N_eff = N * (1 - rho) / (1 + rho)
     """
-    print(f"\nCaCO3 Dispersion Window:")
-    print(f"  Start: {config['dispersion_start']} -> Epoch: {config['dispersion_start_epoch']}")
-    print(f"  End:   {config['dispersion_end']} -> Epoch: {config['dispersion_end_epoch']}")
+    n = len(data)
+    if n < 2:
+        return n
+    
+    # Calculate Lag-1 autocorrelation
+    rho = data.autocorr(lag=1)
+    
+    # If rho is negative or negligible, just use N (conservative)
+    # If rho is very high (~1), N_eff approaches 0.
+    if pd.isna(rho) or rho < 0:
+        rho = 0
+        
+    n_eff = n * (1 - rho) / (1 + rho)
+    return max(1.0, n_eff) # Ensure at least 1 degree of freedom
 
-    # Calculate pixel-wise temporal means
-    if config['mean_based_on_after']:
-        control_pixel_means = control_df[
-            (control_df['epoch_utc'] > config['dispersion_end_epoch']) |
-            (control_df['epoch_utc'] < config['dispersion_start_epoch'])
-        ][pixel_cols].mean(axis=0)
-        experimental_pixel_means = experimental_df[
-            (experimental_df['epoch_utc'] > config['dispersion_end_epoch']) |
-            (experimental_df['epoch_utc'] < config['dispersion_start_epoch'])
-        ][pixel_cols].mean(axis=0)
+
+def analyze_dispersion_effect(control_df, experimental_df, pixel_cols, plots_dir, config):
+    """
+    Performs Difference-in-Differences (DiD) analysis and plots the results.
+    Corrects p-values for temporal autocorrelation.
+    """
+    print(f"\n--- Statistical Analysis (Difference-in-Differences) ---")
+
+    # 1. Calculate Spatial Means (Frame-level averages)
+    # We only care about the aggregate frame temperature for the statistical test
+    control_df = control_df.copy()
+    experimental_df = experimental_df.copy()
+    
+    control_df['spatial_mean'] = control_df[pixel_cols].mean(axis=1)
+    experimental_df['spatial_mean'] = experimental_df[pixel_cols].mean(axis=1)
+
+    # 2. Merge dataframes on timestamp to ensure exact frame alignment
+    # (Assuming timestamps are close enough or using 'epoch_utc' for exact match)
+    merged_df = pd.merge(
+        control_df[['epoch_utc', 'spatial_mean']], 
+        experimental_df[['epoch_utc', 'spatial_mean']], 
+        on='epoch_utc', 
+        suffixes=('_ctrl', '_exp')
+    )
+
+    # 3. Create the "Difference Series" (Experimental - Control)
+    # This removes shared environmental noise (e.g., sun going behind a cloud affects both)
+    merged_df['diff'] = merged_df['spatial_mean_exp'] - merged_df['spatial_mean_ctrl']
+
+    # 4. Define Time Windows
+    # Pre-Dispersion: Start of active camera -> Start of Dispersion
+    # Dispersion: Start of Dispersion -> End of Dispersion
+    pre_mask = (merged_df['epoch_utc'] < config['dispersion_start_epoch'])
+    disp_mask = (merged_df['epoch_utc'] >= config['dispersion_start_epoch']) & \
+                (merged_df['epoch_utc'] <= config['dispersion_end_epoch'])
+
+    pre_data = merged_df.loc[pre_mask, 'diff']
+    disp_data = merged_df.loc[disp_mask, 'diff']
+
+    if len(pre_data) == 0 or len(disp_data) == 0:
+        print("Error: Not enough data in Pre or During windows for analysis.")
+        return
+
+    # 5. Calculate Statistics
+    mean_pre = pre_data.mean()
+    mean_disp = disp_data.mean()
+    
+    # The "Effect Size" is the shift in the difference
+    did_estimate = mean_disp - mean_pre 
+
+    print(f"Time Windows:")
+    print(f"  Pre-Dispersion N frames: {len(pre_data)}")
+    print(f"  Dispersion N frames:     {len(disp_data)}")
+    
+    print(f"\nTemperature Deltas (Experimental - Control):")
+    print(f"  Baseline Delta (Pre):    {mean_pre:.3f} C")
+    print(f"  Dispersion Delta:        {mean_disp:.3f} C")
+    print(f"  Observed Impact (DiD):   {did_estimate:.3f} C")
+
+    # 6. Statistical Significance with Autocorrelation Correction
+    # We compare the distribution of the 'diff' variable Pre vs During.
+    
+    # Calculate Effective Sample Sizes
+    n_eff_pre = calculate_effective_sample_size(pre_data)
+    n_eff_disp = calculate_effective_sample_size(disp_data)
+    
+    print(f"\nAutocorrelation Correction:")
+    print(f"  Pre-dispersion N_eff:    {n_eff_pre:.1f} (Raw: {len(pre_data)})")
+    print(f"  Dispersion N_eff:        {n_eff_disp:.1f} (Raw: {len(disp_data)})")
+    
+    # Welch's t-test using summary statistics and N_eff
+    # t = (mean1 - mean2) / sqrt(var1/N1 + var2/N2)
+    var_pre = pre_data.var(ddof=1)
+    var_disp = disp_data.var(ddof=1)
+    
+    std_error = np.sqrt((var_pre / n_eff_pre) + (var_disp / n_eff_disp))
+    t_stat = (mean_disp - mean_pre) / std_error
+    
+    # Degrees of freedom (Welch-Satterthwaite equation)
+    # Simplified approximation usually sufficient, but let's be rigorous:
+    num = ((var_pre / n_eff_pre) + (var_disp / n_eff_disp))**2
+    den = ((var_pre / n_eff_pre)**2 / (n_eff_pre - 1)) + \
+          ((var_disp / n_eff_disp)**2 / (n_eff_disp - 1))
+    df_eff = num / den
+    
+    # Two-tailed p-value
+    p_value = stats.t.sf(np.abs(t_stat), df_eff) * 2
+
+    print(f"\nSignificance Test (Welch's t-test on Difference Series):")
+    print(f"  t-statistic: {t_stat:.3f}")
+    print(f"  p-value:     {p_value:.6f}")
+    
+    if p_value < 0.05:
+        print("  Result: SIGNIFICANT change in temperature relationship.")
     else:
-        control_pixel_means = control_df[
-            control_df['epoch_utc'] < config['dispersion_start_epoch']
-        ][pixel_cols].mean(axis=0)
-        experimental_pixel_means = experimental_df[
-            experimental_df['epoch_utc'] < config['dispersion_start_epoch']
-        ][pixel_cols].mean(axis=0)
+        print("  Result: NO significant change detected.")
 
-    # Calculate temperature anomalies (difference from pixel mean)
-    control_anomalies = control_df[pixel_cols].sub(control_pixel_means, axis=1)
-    experimental_anomalies = experimental_df[pixel_cols].sub(experimental_pixel_means, axis=1)
-
-    # Calculate mean anomaly across all pixels for each time point
-    control_mean_anomaly = control_anomalies.mean(axis=1)
-    experimental_mean_anomaly = experimental_anomalies.mean(axis=1)
-
-    # Filter to dispersion window
-    control_dispersion = control_df[
-        (control_df['epoch_utc'] >= config['dispersion_start_epoch']) &
-        (control_df['epoch_utc'] <= config['dispersion_end_epoch'])
-    ]
-    experimental_dispersion = experimental_df[
-        (experimental_df['epoch_utc'] >= config['dispersion_start_epoch']) &
-        (experimental_df['epoch_utc'] <= config['dispersion_end_epoch'])
-    ]
-
-    control_dispersion_anomalies = control_anomalies.loc[control_dispersion.index]
-    experimental_dispersion_anomalies = experimental_anomalies.loc[experimental_dispersion.index]
-
-    # Print statistics for dispersion window
-    print(f"\nStatistics within CaCO3 Dispersion Window:")
-    print(f"\nControl camera:")
-    print(f"  Frames during dispersion: {len(control_dispersion)}")
-    if len(control_dispersion) > 0:
-        control_disp_anomaly_values = control_dispersion_anomalies.values.flatten()
-        print(f"  Mean temperature anomaly: {control_disp_anomaly_values.mean():.3f} C")
-        print(f"  Std dev: {control_disp_anomaly_values.std():.3f} C")
-
-    print(f"\nExperimental camera:")
-    print(f"  Frames during dispersion: {len(experimental_dispersion)}")
-    if len(experimental_dispersion) > 0:
-        experimental_disp_anomaly_values = experimental_dispersion_anomalies.values.flatten()
-        print(f"  Mean temperature anomaly: {experimental_disp_anomaly_values.mean():.3f} C")
-        print(f"  Std dev: {experimental_disp_anomaly_values.std():.3f} C")
-
-    if len(control_dispersion) > 0 and len(experimental_dispersion) > 0:
-        diff = experimental_disp_anomaly_values.mean() - control_disp_anomaly_values.mean()
-        print(f"Temperature difference between control and experimental: {diff:.3f} C")
-
-        # Statistical significance test using frame-level means to avoid temporal autocorrelation
-        # Each frame is treated as one observation (n = number of frames, not pixels × frames)
-        control_frame_means = control_mean_anomaly.loc[control_dispersion.index]
-        experimental_frame_means = experimental_mean_anomaly.loc[experimental_dispersion.index]
-
-        t_stat, p_value = stats.ttest_ind(experimental_frame_means, control_frame_means)
-        print(f"\nStatistical significance test (two-sample t-test on frame-level means):")
-        print(f"  Sample sizes: n_control={len(control_frame_means)}, n_experimental={len(experimental_frame_means)}")
-        print(f"  t-statistic: {t_stat:.3f}")
-        print(f"  p-value: {p_value:.6f}")
-
-    # Create temporal analysis plots
-    fig = plt.figure(figsize=(16, 12))
-    gs = fig.add_gridspec(2, 1, height_ratios=[1, 1], hspace=0.3)
-    ax1 = fig.add_subplot(gs[0])
-    ax2 = fig.add_subplot(gs[1])
-
-    # Mean temperature anomaly plot
-    dispersion_label = f"CaCO3 Dispersion\n({config['dispersion_start']} - {config['dispersion_end']})"
-    ax1.axvspan(config['dispersion_start_epoch'], config['dispersion_end_epoch'], alpha=0.2, color='green',
-                label=dispersion_label)
-    ax1.axhline(0, color='black', linestyle='-', linewidth=0.5, alpha=0.5)
-    ax1.plot(control_df['epoch_utc'], control_mean_anomaly,
-             label='Control', color='blue', alpha=0.7, linewidth=1)
-    ax1.plot(experimental_df['epoch_utc'], experimental_mean_anomaly,
-             label='Experimental', color='red', alpha=0.7, linewidth=1)
-    ax1.set_xlabel('Time (epoch UTC)')
-    ax1.set_ylabel('Mean Temperature Anomaly (C)')
-    ax1.set_title('Temperature Anomaly Over Time: Control vs Experimental\n(Anomaly = Temperature - Pixel Mean)')
-    ax1.legend(loc='upper right')
+    # 7. Plotting
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    
+    # Plot 1: Raw Temperatures
+    ax1.plot(merged_df['epoch_utc'], merged_df['spatial_mean_ctrl'], label='Control', color='blue', alpha=0.6)
+    ax1.plot(merged_df['epoch_utc'], merged_df['spatial_mean_exp'], label='Experimental', color='red', alpha=0.6)
+    
+    # Add shading for dispersion
+    ax1.axvspan(config['dispersion_start_epoch'], config['dispersion_end_epoch'], 
+                color='gray', alpha=0.2, label='Dispersion Window')
+    
+    ax1.set_ylabel('Mean Frame Temp (°C)')
+    ax1.set_title('Raw Thermal Camera Temperatures')
+    ax1.legend()
     ax1.grid(True, alpha=0.3)
-    ax1.yaxis.set_major_locator(plt.MultipleLocator(1))
-    ax1.yaxis.set_minor_locator(plt.MultipleLocator(0.5))
-    ax1.grid(which='minor', alpha=0.15)
+    
+    # Plot 2: Difference Series (The variable we actually tested)
+    ax2.plot(merged_df['epoch_utc'], merged_df['diff'], color='purple', alpha=0.8, label='Exp - Ctrl')
+    
+    # Plot mean lines
+    # Pre-mean line
+    pre_epochs = merged_df.loc[pre_mask, 'epoch_utc']
+    if len(pre_epochs) > 0:
+        ax2.hlines(mean_pre, pre_epochs.min(), pre_epochs.max(), colors='green', linestyles='--', lw=2, label=f'Baseline Mean ({mean_pre:.2f}C)')
+        
+    # Disp-mean line
+    disp_epochs = merged_df.loc[disp_mask, 'epoch_utc']
+    if len(disp_epochs) > 0:
+        ax2.hlines(mean_disp, disp_epochs.min(), disp_epochs.max(), colors='orange', linestyles='--', lw=2, label=f'Dispersion Mean ({mean_disp:.2f}C)')
 
-    # Histogram of temperature anomalies during dispersion window
-    if len(control_dispersion) > 0 and len(experimental_dispersion) > 0:
-        ax2.hist(control_disp_anomaly_values, bins=50, alpha=0.6, color='blue',
-                label=f'Control (mean={control_disp_anomaly_values.mean():.3f} C)', edgecolor='black')
-        ax2.hist(experimental_disp_anomaly_values, bins=50, alpha=0.6, color='red',
-                label=f'Experimental (mean={experimental_disp_anomaly_values.mean():.3f} C)', edgecolor='black')
-        ax2.axvline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
-        ax2.set_xlabel('Temperature Anomaly (C)')
-        ax2.set_ylabel('Frequency')
-        ax2.set_title('Distribution of Temperature Anomalies During Dispersion Window')
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-
-    plt.savefig(plots_dir / 'thermal_camera_temporal_analysis.png', dpi=150, bbox_inches='tight')
+    ax2.axvspan(config['dispersion_start_epoch'], config['dispersion_end_epoch'], 
+                color='gray', alpha=0.2)
+    
+    ax2.set_ylabel('Temp Difference (Exp - Ctrl) (°C)')
+    ax2.set_xlabel('Epoch UTC')
+    ax2.set_title(f'Difference Analysis (DiD Estimate: {did_estimate:.3f}°C)')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    output_path = plots_dir / 'thermal_did_analysis.png'
+    plt.savefig(output_path, dpi=150)
     plt.close()
-    print(f"Saved temporal analysis to {plots_dir / 'thermal_camera_temporal_analysis.png'}")
+    print(f"Saved analysis plot to {output_path}")
 
 
 def explore_thermal_camera_data(date):
-    """
-    Main function to explore and visualize thermal camera data for a specific date.
-
-    Args:
-        date: Date string in format YYYY-MM-DD
-    """
-    # Load configuration
     config = load_config(date)
-
-    # Setup paths
+    
     control_path = Path(f'data/{date}/thermal_cameras/control.csv')
     experimental_path = Path(f'data/{date}/thermal_cameras/experimental.csv')
     plots_dir = Path(f'plots/thermal_camera/{date}')
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load data
     control_df, experimental_df, pixel_cols = load_thermal_camera_data(
         control_path, experimental_path, config
     )
 
-    # Plot sample frames during dispersion
     plot_sample_frames_during_dispersion(
         control_df, experimental_df, pixel_cols, plots_dir, config
     )
 
-    # Plot temporal analysis
-    plot_temporal_analysis(
+    analyze_dispersion_effect(
         control_df, experimental_df, pixel_cols, plots_dir, config
     )
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Explore thermal camera data for a specific date')
