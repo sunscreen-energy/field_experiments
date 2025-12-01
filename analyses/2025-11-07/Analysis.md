@@ -32,7 +32,7 @@ Because the field exhibits a consistent north-south temperature gradient (northe
 Prior to CaCO₃ deployment, thermal imagery revealed that the northern portion of the field consistently measured warmer than the southern portion. This pattern was observed across multiple drone flights and is independent of the intervention.
 
 <p align="center">
-<img src="plots/tif_temp_plots/2025-11-07T1109PST.png" alt="Baseline temperature distribution at 11:09 AM PST" width="700">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/2025-11-07T1109PST.png" alt="Baseline temperature distribution at 11:09 AM PST" width="700">
 </p>
 
 **Figure 1**: Baseline temperature distribution at 11:09 AM PST (before deployment began). The north-south gradient is evident, with northern areas (top of field) showing higher temperatures (orange/red) compared to southern areas (blue). Temperature scale: 10-20°C.
@@ -42,7 +42,7 @@ Prior to CaCO₃ deployment, thermal imagery revealed that the northern portion 
 By 12:32 PM PST, temperature changes relative to baseline varied systematically across the horizontal bands. Northern bands in the experimental region showed minimal temperature increases (0.02-0.52°C), while southern bands showed increases of 3-4°C. The control region exhibited a uniform increase of approximately 2.95°C.
 
 <p align="center">
-<img src="plots/tif_temp_plots/diff_1109_to_1232.png" alt="Temperature changes by horizontal band at 12:32 PM PST" width="700">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/11-07-diff_1109_to_1232.png" alt="Temperature changes by horizontal band at 12:32 PM PST" width="700">
 </p>
 
 **Figure 2**: Temperature change from baseline (11:09 AM) to 12:32 PM PST. The experimental region is segmented into 15 horizontal bands (left), with each band showing its mean temperature change in degrees Celsius. The control region (right) shows 2.95°C warming. Northern experimental bands show suppressed warming.
@@ -52,7 +52,7 @@ By 12:32 PM PST, temperature changes relative to baseline varied systematically 
 At 11:59 AM PST (during active deployment), thermal imagery showed spatial heterogeneity in temperature changes across the experimental region. Northern portions of the experimental area exhibited substantially lower temperature increases compared to the control region.
 
 <p align="center">
-<img src="plots/tif_temp_plots/diff_1109_to_1159.png" alt="Temperature changes during deployment" width="700">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/11-07-diff_1109_to_1159.png" alt="Temperature changes during deployment" width="700">
 </p>
 
 **Figure 3**: Temperature change from baseline (11:09 AM) to 11:59 AM PST (during deployment). The experimental region (left polygon with horizontal bands) shows spatially variable warming patterns, with northern bands showing reduced temperature increases compared to the control region (right), which warmed by approximately 2.69°C.
@@ -71,11 +71,6 @@ The analysis demonstrates measurable thermal effects from aerial CaCO₃ deploym
 
 2. **Spatial Gradient Correction**: The horizontal strip band methodology successfully accounted for pre-existing north-south temperature variations, allowing for more accurate treatment effect estimation.
 
-3. **Delayed Response**: This experiment exhibited a gradual establishment of the cooling effect over 40-60 minutes, contrasting with instantaneous effects observed in other trials. This may reflect differences in:
-   - Particle size distribution and atmospheric dispersion dynamics
-   - Cloud cover or atmospheric conditions during the deployment window
-   - Crop canopy structure affecting how particles settled on vegetation
-
 These findings support the viability of aerial calcium carbonate deployment as a localized agricultural cooling strategy, though operational protocols should account for potential temporal lags in establishing full thermal effects.
 
 ---
@@ -85,37 +80,37 @@ These findings support the viability of aerial calcium carbonate deployment as a
 ### Temperature Time Series
 
 <p align="center">
-<img src="plots/tif_temp_plots/2025-11-07T1120PST.png" alt="Temperature at 11:20 AM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/2025-11-07T1120PST.png" alt="Temperature at 11:20 AM" width="650">
 </p>
 
 **Figure A1**: Temperature distribution at 11:20 AM PST (before deployment). Absolute temperature scale: 10-20°C.
 
 <p align="center">
-<img src="plots/tif_temp_plots/2025-11-07T1151PST.png" alt="Temperature at 11:51 AM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/2025-11-07T1151PST.png" alt="Temperature at 11:51 AM" width="650">
 </p>
 
 **Figure A2**: Temperature distribution at 11:51 AM PST (during deployment, 9 minutes after start). Absolute temperature scale: 10-20°C.
 
 <p align="center">
-<img src="plots/tif_temp_plots/2025-11-07T1214PST.png" alt="Temperature at 12:14 PM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/2025-11-07T1214PST.png" alt="Temperature at 12:14 PM" width="650">
 </p>
 
 **Figure A3**: Temperature distribution at 12:14 PM PST (during deployment, near end of window). Absolute temperature scale: 10-20°C.
 
 <p align="center">
-<img src="plots/tif_temp_plots/2025-11-07T1223PST.png" alt="Temperature at 12:23 PM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/2025-11-07T1223PST.png" alt="Temperature at 12:23 PM" width="650">
 </p>
 
 **Figure A4**: Temperature distribution at 12:23 PM PST (post-deployment). Absolute temperature scale: 10-20°C.
 
 <p align="center">
-<img src="plots/tif_temp_plots/2025-11-07T1301PST.png" alt="Temperature at 1:01 PM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/2025-11-07T1301PST.png" alt="Temperature at 1:01 PM" width="650">
 </p>
 
 **Figure A5**: Temperature distribution at 1:01 PM PST (post-deployment). Absolute temperature scale: 10-20°C.
 
 <p align="center">
-<img src="plots/tif_temp_plots/2025-11-07T1312PST.png" alt="Temperature at 1:12 PM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/2025-11-07T1312PST.png" alt="Temperature at 1:12 PM" width="650">
 </p>
 
 **Figure A6**: Temperature distribution at 1:12 PM PST (post-deployment). Note the cooler overall temperatures, possibly due to cloud cover. Absolute temperature scale: 10-20°C.
@@ -123,25 +118,25 @@ These findings support the viability of aerial calcium carbonate deployment as a
 ### Temperature Difference Maps
 
 <p align="center">
-<img src="plots/tif_temp_plots/diff_1109_to_1151.png" alt="Temperature change to 11:51 AM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/11-07-diff_1109_to_1151.png" alt="Temperature change to 11:51 AM" width="650">
 </p>
 
 **Figure A7**: Temperature change from 11:09 AM to 11:51 AM PST (early deployment period). The experimental region (left polygon) and control region (right polygon) both show warming, with field exhibiting spatial heterogeneity. Scale: -3 to +5°C.
 
 <p align="center">
-<img src="plots/tif_temp_plots/diff_1109_to_1159.png" alt="Temperature change to 11:59 AM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/11-07-diff_1109_to_1159.png" alt="Temperature change to 11:59 AM" width="650">
 </p>
 
 **Figure A8**: Temperature change from 11:09 AM to 11:59 AM PST (mid-deployment). Experimental region bands (left) show varied warming patterns. Control region shows uniform warming of approximately 2.69°C. Scale: -3 to +5°C.
 
 <p align="center">
-<img src="plots/tif_temp_plots/diff_1109_to_1214.png" alt="Temperature change to 12:14 PM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/11-07-diff_1109_to_1214.png" alt="Temperature change to 12:14 PM" width="650">
 </p>
 
 **Figure A9**: Temperature change from 11:09 AM to 12:14 PM PST (end of deployment window). Northern experimental bands show minimal warming while southern bands show substantial warming. Scale: -3 to +5°C.
 
 <p align="center">
-<img src="plots/tif_temp_plots/diff_1109_to_1223.png" alt="Temperature change to 12:23 PM" width="650">
+<img src="/Users/suhaschundi/Documents/Sunscreen/field_experiments/plots/tif_temp_plots/11-07-diff_1109_to_1223.png" alt="Temperature change to 12:23 PM" width="650">
 </p>
 
 **Figure A10**: Temperature change from 11:09 AM to 12:23 PM PST (post-deployment). Pattern persists with suppressed warming in northern experimental area. Scale: -3 to +5°C.

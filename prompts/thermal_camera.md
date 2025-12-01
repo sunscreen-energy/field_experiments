@@ -8,3 +8,23 @@ Obviously the control and experimental means should be computed separately.
 
 Within the dispersion window, the mean temperature differences should be computed.
 Plot 2 histograms on the same axes, the contents of the histograms should be the pixel differences in temperature from the mean for the control and experimental versions.
+
+! --- 
+
+The file `src/explore_thermal_cameras.py` constructs the graphs we'd like to see from thermal camera readings. However it assumes we only have 1 date/experiment during which we collected thermal camera data.
+Thermal camera data should be expected to be in `data/YYYY-MM-DD/thermal_cameras`. Currently only 2025-11-07 has that data, but this will change soon.
+
+There's a lot of hardcoded values in the python script. 
+Instead make this a YAML file that goes in the `data/YYYY-MM-DD/thermal_cameras` dir.
+The options for this config file should be:
+* drop_cloud
+    * If true also the start and end time of the cloud
+* mean based on after
+
+Just delete the option in the code for KEEP_ONLY_MIDDLE_BAND, its kinda pointless.
+
+All times for the YAML file should be in "YYYY-MM-DD-HH-MM-SS" format, with an option for timezone as well, which will usually be -8 (PST) or -7 PDT. Make a comment in the YAML file explaining this.
+
+Internally, the explore thermal cameras should use the Epoch UTC format, which is seconds since 1970. However this should not be needed for the YAML input.
+
+Output files should go to `plots/thermal_camera/{date}/filename.png`. Use os.makedirs(... exist_ok=True) to ensure that exists. Test your new implementation with the 2025-11-07 data and fix any bugs that arise.

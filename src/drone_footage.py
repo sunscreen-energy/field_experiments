@@ -340,7 +340,7 @@ class DroneFlightPass:
             combined_mask = np.ones(self.master_shape, dtype=bool)
             for mask in region_masks:
                 combined_mask &= mask
-            combined_mask &= self.nodata_mask
+            combined_mask &= ~self.nodata_mask
 
             # Get pixel indices (rows, cols)
             points = np.column_stack(np.where(combined_mask))
@@ -600,7 +600,6 @@ class FlightDifference:
                 centroid_lon = np.mean(hull_geo_coords[:, 0]) # Index 0 is Longitude/X
                 centroid_lat = np.mean(hull_geo_coords[:, 1]) # Index 1 is Latitude/Y
 
-                print(region_name)
                 ax.text(centroid_lon, centroid_lat, region_name,
                     fontsize=10, ha='center', va='center',
                     bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
